@@ -1,0 +1,12 @@
+FROM node:24-alpine
+
+WORKDIR /app
+
+# Source is bind-mounted at /app by compose; node_modules is a separate volume
+# at /app/node_modules, so the dependencies installed here are what the container uses.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

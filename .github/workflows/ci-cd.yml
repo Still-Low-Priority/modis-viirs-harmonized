@@ -1,0 +1,209 @@
+name: CI/CD
+
+# feature/* --PR--> dev --PR--> main --> GHCR --> EC2
+# Rollback: run manually with image_tag = SHA of a previous build.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Rollback: image tag (git SHA) to deploy. Empty = build and deploy current main"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Skip jobs for parts of the repo that don't exist yet.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.d.outputs.backend }}
+      frontend: ${{ steps.d.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: d
+        run: |
+          [ -f backend/requirements.txt ] && echo "backend=true" >> "$GITHUB_OUTPUT" || echo "backend=false" >> "$GITHUB_OUTPUT"
+          [ -f frontend/package.json ]    && echo "frontend=true" >> "$GITHUB_OUTPUT" || echo "frontend=false" >> "$GITHUB_OUTPUT"
+
+  backend-test:
+    needs: detect
+    if: needs.detect.outputs.backend == 'true' && inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: firms
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/firms
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Migrations apply cleanly
+        if: hashFiles('backend/alembic.ini') != ''
+        run: alembic upgrade head
+      - name: Tests
+        run: |
+          set +e
+          pytest -q
+          code=$?
+          set -e
+          # Exit code 5 = no tests collected; don't fail until tests exist.
+          if [ "$code" -eq 5 ]; then
+            echo "::warning title=Backend::No tests yet, skipping"
+            exit 0
+          fi
+          exit "$code"
+
+  frontend-test:
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true' && inputs.image_tag == ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm run typecheck --if-present
+      - run: npm test --if-present
+      - run: npm run build
+
+  build-images:
+    needs: [detect, backend-test, frontend-test]
+    if: >-
+      !failure() && !cancelled()
+      && github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.image_tag == ''))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check Dockerfile
+        id: check
+        run: |
+          if [ -f "${{ matrix.component }}/Dockerfile" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=${{ matrix.component }}::No ${{ matrix.component }}/Dockerfile, image not built"
+          fi
+      - name: Image name
+        if: steps.check.outputs.ok == 'true'
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-${{ matrix.component }}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+        if: steps.check.outputs.ok == 'true'
+      - uses: docker/login-action@v4
+        if: steps.check.outputs.ok == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        if: steps.check.outputs.ok == 'true'
+        with:
+          context: ${{ matrix.component }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:main
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+  # Enable with repo variable DEPLOY_ENABLED=true once the server has Docker and a .env in DEPLOY_DIR.
+  deploy:
+    needs: build-images
+    if: >-
+      !failure() && !cancelled()
+      && vars.DEPLOY_ENABLED == 'true'
+      && (needs.build-images.result == 'success' || inputs.image_tag != '')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/modis-viirs' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "$KNOWN_HOSTS" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::EC2_KNOWN_HOSTS not set, falling back to ssh-keyscan (less secure)"
+            ssh-keyscan -H "$HOST" > ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+        run: |
+          IMAGE_PREFIX="${IMAGE_PREFIX,,}"
+          SSH="ssh -i $HOME/.ssh/id_deploy"
+          scp -i ~/.ssh/id_deploy docker-compose.yml "$USER@$HOST:$DEPLOY_DIR/docker-compose.yml"
+          scp -i ~/.ssh/id_deploy deploy/remote-deploy.sh "$USER@$HOST:/tmp/remote-deploy.sh"
+          # Token goes via stdin so it never shows up in remote process args.
+          printf '%s\n' "$GHCR_TOKEN" | $SSH "$USER@$HOST" \
+            "IMAGE_TAG='$IMAGE_TAG' IMAGE_PREFIX='$IMAGE_PREFIX' DEPLOY_DIR='$DEPLOY_DIR' GHCR_USER='$GHCR_USER' bash /tmp/remote-deploy.sh; rc=\$?; rm -f /tmp/remote-deploy.sh; exit \$rc"
+
+      - name: Health check
+        if: vars.HEALTHCHECK_URL != ''
+        run: curl -fsS --retry 10 --retry-delay 5 --retry-all-errors "${{ vars.HEALTHCHECK_URL }}"
+
+      - name: Summary
+        run: echo "Deployed image \`${IMAGE_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
