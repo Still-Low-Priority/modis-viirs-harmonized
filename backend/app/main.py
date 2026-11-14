@@ -1,8 +1,9 @@
-# TODO(backend): ТИМЧАСОВА ЗАТИЧКА, щоб контейнер бекенду стартував на сервері.
-# Додана DevOps до появи справжнього main.py — замініть цей файл своїм.
-# Бажано зберегти GET /api/health: на нього дивиться health check у CI/CD.
+# TODO(backend): TEMPORARY STUB so the backend container starts on the server.
+# Added by DevOps until the real main.py lands; replace this file with yours.
+# Please keep GET /api/health: the CI/CD health check calls it.
 #
-# nginx проксює /api/ на бекенд без зрізання префікса, тому всі роути під /api.
+# nginx proxies /api/ to the backend without stripping the prefix, so every
+# route lives under /api.
 from fastapi import FastAPI
 
 app = FastAPI(title="MODIS/VIIRS Harmonized API (stub)")
