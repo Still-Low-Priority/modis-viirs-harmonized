@@ -221,3 +221,6 @@ __marimo__/
 
 # graphify knowledge graph (local)
 graphify-out/
+
+# The Python template above ignores every lib/; the frontend keeps source there.
+!frontend/src/lib/
