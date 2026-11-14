@@ -1,0 +1,83 @@
+# Standalone dev stack: docker compose -f docker-compose.dev.yml up --build
+name: modis-viirs-dev
+
+x-backend-dev: &backend-dev
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.dev
+  volumes:
+    - ./backend:/app
+  env_file:
+    - path: backend/.env
+      required: false
+  # Real env vars take precedence over backend/.env in pydantic-settings.
+  environment:
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/firms
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: firms
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - redisdata_dev:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    <<: *backend-dev
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # Behind a profile because celery and app/worker.py don't exist yet
+  # (it would crash-loop). Enable with `--profile celery`.
+  celery:
+    <<: *backend-dev
+    command: celery -A app.worker worker --loglevel=info
+    profiles: ["celery"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume keeps the container's Linux node_modules from being
+      # shadowed by (or mixed with) the host's node_modules.
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  pgdata_dev:
+  redisdata_dev:

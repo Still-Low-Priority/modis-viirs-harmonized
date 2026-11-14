@@ -1,0 +1,83 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  redis:
+    image: redis:8-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  backend:
+    image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
+    build: ./backend
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Reachable only inside the compose network (via the frontend's nginx).
+    expose:
+      - "8000"
+    restart: unless-stopped
+    logging: *default-logging
+
+  # Not started by default: enable with `--profile celery` once app/worker.py exists.
+  celery:
+    image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
+    command: celery -A app.worker worker --loglevel=info
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["celery"]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # The frontend image is nginx: it serves the SPA and proxies /api to backend,
+  # so it is the only public entrypoint (no separate nginx service).
+  frontend:
+    image: ${IMAGE_PREFIX:-modis-viirs}-frontend:${IMAGE_TAG:-main}
+    build: ./frontend
+    ports:
+      - "80:80"
+    # service_started, not healthy: nginx tolerates the backend being down.
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  pgdata:
+  redisdata:
