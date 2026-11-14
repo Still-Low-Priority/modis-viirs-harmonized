@@ -1,0 +1,120 @@
+/* Page skeleton. Feature styles live next to their components. */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: var(--header-h) minmax(0, 1fr);
+  grid-template-areas:
+    'header header'
+    'sidebar main';
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app[data-sidebar='closed'] {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app__header {
+  grid-area: header;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.app__sidebar {
+  grid-area: sidebar;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app[data-sidebar='closed'] .app__sidebar {
+  display: none;
+}
+
+.app__main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app__summary {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app__map {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app__bottom {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 1px;
+  height: var(--bottom-h);
+  border-top: 1px solid var(--border);
+  background: var(--border);
+}
+
+.app[data-bottom='closed'] .app__bottom {
+  display: none;
+}
+
+.app__panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  /* Both states: the closed-sidebar rule above would otherwise win and squash the page. */
+  .app,
+  .app[data-sidebar='closed'] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'main';
+  }
+
+  /* On small screens the sidebar is a sheet over the map. */
+  .app__sidebar {
+    position: fixed;
+    inset: var(--header-h) 0 0 0;
+    z-index: 1200;
+    width: min(100%, 360px);
+    box-shadow: var(--shadow);
+  }
+
+  .app__bottom {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    max-height: 46dvh;
+    overflow-y: auto;
+  }
+
+  .app__panel {
+    height: var(--bottom-h);
+  }
+}
+
+.app-crash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: var(--danger);
+}
+
+.app-panel-skeleton {
+  width: calc(100% - 2 * var(--space-4));
+  height: calc(100% - 2 * var(--space-4));
+  margin: var(--space-4);
+}

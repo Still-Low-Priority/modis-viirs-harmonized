@@ -1,0 +1,22 @@
+export const messages = {
+  en: {
+    title: 'Fire activity by day',
+    prevYear: 'Previous year',
+    nextYear: 'Next year',
+    count: '{n} {unit}',
+    detectionOne: 'detection',
+    detectionMany: 'detections',
+    scopePlace: 'in {place}',
+    scopeView: 'in the current map view',
+    gridLabel: 'Detections per day in {year}',
+    less: 'Less',
+    more: 'More',
+    noData: 'No data',
+    selectMonth: 'Select {month} {year}',
+    retry: 'Retry',
+    error: 'Could not load the calendar.',
+    empty: 'No detections in {year} for the current filters.',
+    cellLabel: '{date}: {count}',
+    cellNoData: '{date}: no data',
+  },
+}

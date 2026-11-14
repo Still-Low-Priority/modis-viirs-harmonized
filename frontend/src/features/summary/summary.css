@@ -1,0 +1,403 @@
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 64px;
+  padding: 0 var(--space-4);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.summary > * {
+  flex: none;
+  transition: opacity 0.15s;
+}
+
+.summary[data-stale] > * {
+  opacity: 0.6;
+}
+
+.summary-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.summary-label {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Scope + period: fixed width so the blocks to the right never move. */
+.summary-scope {
+  display: flex;
+  flex-direction: column;
+  width: 22ch;
+  line-height: 1.3;
+}
+
+.summary-scope__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.summary-scope__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-scope__period {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.summary-clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.summary-clear:hover {
+  color: var(--text);
+}
+
+.summary-clear:focus-visible,
+.summary-chart:focus-visible,
+.summary-frp:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.summary-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+/* Chart */
+.summary .summary-block--chart {
+  flex: 1 1 300px;
+  min-width: 240px;
+  max-width: 340px;
+}
+
+.summary-caption {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 11px;
+}
+
+.summary-caption__text {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.summary-total {
+  min-width: 9ch;
+  font-size: 12px;
+}
+
+.summary-plot {
+  display: grid;
+  grid-template-columns: 5ch 1fr;
+  grid-template-rows: 30px auto;
+  column-gap: 4px;
+}
+
+.summary-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 30px;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1;
+  text-align: right;
+}
+
+.summary-chart {
+  position: relative;
+  height: 30px;
+  border-radius: 2px;
+}
+
+.summary-bars {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.summary-guide {
+  stroke: var(--border);
+  stroke-dasharray: 2 3;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.summary-base {
+  stroke: var(--surface-3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.summary-bar {
+  fill: var(--accent);
+  opacity: 0.55;
+}
+
+.summary-bar--active {
+  opacity: 1;
+}
+
+.summary-slots {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.summary-slot {
+  flex: 1 1 0;
+  cursor: pointer;
+}
+
+.summary-peak {
+  position: absolute;
+  top: -1px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--text);
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.summary-peak--start {
+  transform: translateX(-20%);
+  align-items: flex-start;
+}
+
+.summary-peak--end {
+  transform: translateX(-80%);
+  align-items: flex-end;
+}
+
+.summary-peak i {
+  width: 4px;
+  height: 4px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.summary-readout {
+  grid-column: 2;
+  min-height: 14px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  text-overflow: ellipsis;
+}
+
+.summary-back {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* FRP */
+.summary-block--frp {
+  width: 15ch;
+}
+
+.summary-frp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  width: fit-content;
+  border-bottom: 1px dotted var(--text-faint);
+  cursor: help;
+}
+
+.summary-frp__value {
+  min-width: 9ch;
+  font-size: 18px;
+  text-align: right;
+}
+
+.summary-frp small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.summary-tip {
+  position: fixed;
+  z-index: 50;
+  display: none;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.summary-tip--on {
+  display: block;
+}
+
+/* Sensors */
+.summary .summary-block--sensors {
+  width: 340px;
+  min-width: 120px;
+  gap: 3px;
+}
+
+.summary-split {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.summary-split__seg {
+  min-width: 2px;
+}
+
+/* One line tall: items that do not fit wrap out of sight as whole items, never cut mid-word. */
+.summary-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 14px;
+  list-style: none;
+}
+
+.summary-legend li {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.summary-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.summary-legend b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (max-width: 1280px) {
+  .summary .summary-block--sensors {
+    width: 220px;
+  }
+}
+
+.summary-empty {
+  font-size: 13px;
+}
+
+.summary-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.summary-error .btn {
+  padding: 2px 10px;
+}
+
+.summary-skel {
+  display: block;
+  width: 80px;
+  height: 12px;
+  margin: 2px 0;
+}
+
+.summary-skel--chart {
+  width: 100%;
+  height: 32px;
+}
+
+.summary-skel--lg {
+  width: 110px;
+  height: 20px;
+}
+
+.summary-skel--bar {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .summary {
+    gap: var(--space-4);
+  }
+
+  .summary-scope {
+    order: 0;
+  }
+
+  .summary .summary-block--chart {
+    flex: none;
+    order: 1;
+    width: 300px;
+  }
+
+  .summary-back {
+    order: 2;
+  }
+
+  .summary-block--frp {
+    order: 3;
+  }
+
+  .summary .summary-block--sensors {
+    order: 4;
+  }
+}
+
+@media (max-width: 600px) {
+  .summary-legend {
+    display: none;
+  }
+}
