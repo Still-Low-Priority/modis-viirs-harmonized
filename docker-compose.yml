@@ -48,10 +48,10 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
-  # Not started by default: enable with `--profile celery` once app/worker.py exists.
+  # FIRMS ingestion worker. Same image as backend; migrations run only there.
   celery:
     image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
-    command: celery -A app.worker worker --loglevel=info
+    command: celery -A app.celery_app worker --loglevel=info
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
@@ -60,7 +60,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    profiles: ["celery"]
     restart: unless-stopped
     logging: *default-logging
 

@@ -192,13 +192,20 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+          CELERY_BROKER_URL: ${{ secrets.CELERY_BROKER_URL }}
+          CELERY_RESULT_BACKEND: ${{ secrets.CELERY_RESULT_BACKEND }}
         run: |
           IMAGE_PREFIX="${IMAGE_PREFIX,,}"
           SSH="ssh -i $HOME/.ssh/id_deploy"
           scp -i ~/.ssh/id_deploy docker-compose.yml "$USER@$HOST:$DEPLOY_DIR/docker-compose.yml"
           scp -i ~/.ssh/id_deploy deploy/remote-deploy.sh "$USER@$HOST:/tmp/remote-deploy.sh"
-          # Token goes via stdin so it never shows up in remote process args.
-          printf '%s\n' "$GHCR_TOKEN" | $SSH "$USER@$HOST" \
+          # Token and app env go via stdin so they never show up in remote process args.
+          # Line 1 is the token, the rest are KEY=VALUE lines written to the server's .env.
+          {
+            printf '%s\n' "$GHCR_TOKEN"
+            printf 'CELERY_BROKER_URL=%s\n' "$CELERY_BROKER_URL"
+            printf 'CELERY_RESULT_BACKEND=%s\n' "$CELERY_RESULT_BACKEND"
+          } | $SSH "$USER@$HOST" \
             "IMAGE_TAG='$IMAGE_TAG' IMAGE_PREFIX='$IMAGE_PREFIX' DEPLOY_DIR='$DEPLOY_DIR' GHCR_USER='$GHCR_USER' bash /tmp/remote-deploy.sh; rc=\$?; rm -f /tmp/remote-deploy.sh; exit \$rc"
 
       - name: Health check

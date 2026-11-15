@@ -14,6 +14,8 @@ x-backend-dev: &backend-dev
   environment:
     DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/firms
     REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
   depends_on:
     db:
       condition: service_healthy
@@ -54,12 +56,10 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
-  # Behind a profile because celery and app/worker.py don't exist yet
-  # (it would crash-loop). Enable with `--profile celery`.
+  # FIRMS ingestion worker (needs FIRMS_MAP_KEY in backend/.env to run jobs).
   celery:
     <<: *backend-dev
-    command: celery -A app.worker worker --loglevel=info
-    profiles: ["celery"]
+    command: celery -A app.celery_app worker --loglevel=info
 
   frontend:
     build:
