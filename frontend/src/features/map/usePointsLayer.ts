@@ -12,7 +12,7 @@ import type { MapMessages } from './messages'
 
 export function pointColor(f: DetectionFeature, colorBy: ColorBy): string {
   const p = f.properties
-  if (colorBy === 'confidence') return CONFIDENCE_COLORS[p.confidence] ?? CONFIDENCE_COLORS.low
+  if (colorBy === 'confidence') return p.confidence ? CONFIDENCE_COLORS[p.confidence] : CONFIDENCE_COLORS.low
   if (colorBy === 'frp') return frpColor(p.frp)
   return sourceColor(p.source_product)
 }
@@ -86,7 +86,7 @@ export function usePointsLayer(
             [
               { label: '', value: formatDateTimeUtc(p.acquired_at, lang) },
               { label: t.tipFrp, value: formatFrp(p.frp, lang) },
-              { label: t.tipConfidence, value: t[`confidence_${p.confidence}`] ?? p.confidence },
+              { label: t.tipConfidence, value: p.confidence ? t[`confidence_${p.confidence}`] : t.confidence_unknown },
             ],
             pointColor(f, colorBy),
           ),

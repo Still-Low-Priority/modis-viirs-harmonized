@@ -1,6 +1,6 @@
 import { useId } from 'react'
-import { useMeta } from '../../api/queries'
-import type { Confidence, DayNight } from '../../api/types'
+import { processingKinds, useFullMeta, useMeta } from '../../api/queries'
+import type { Confidence, DayNight, Processing } from '../../api/types'
 import { fmt, plural, useT } from '../../i18n'
 import { sourceColor, sourceLabel } from '../../lib/colors'
 import { addDays, clampDay, daysBetween, isValidDay } from '../../lib/dates'
@@ -21,12 +21,15 @@ export function FiltersPanel() {
   const t = useT(messages)
   const uid = useId()
   const meta = useMeta()
+  const kinds = processingKinds(useFullMeta().data)
 
   const dateFrom = useStore((s) => s.dateFrom)
   const dateTo = useStore((s) => s.dateTo)
   const sources = useStore((s) => s.sources)
   const daynight = useStore((s) => s.daynight)
   const minConfidence = useStore((s) => s.minConfidence)
+  const processing = useStore((s) => s.processing)
+  const setProcessing = useStore((s) => s.setProcessing)
   const region = useStore((s) => s.region)
   const setRegion = useStore((s) => s.setRegion)
   const setDateRange = useStore((s) => s.setDateRange)
@@ -85,6 +88,10 @@ export function FiltersPanel() {
     { value: 'D', label: t.dnDay },
     { value: 'N', label: t.dnNight },
   ]
+  const kindOptions: { value: Processing; label: string }[] = [
+    { value: 'NRT', label: t.kindNrt },
+    { value: 'SP', label: t.kindSp },
+  ]
   const confOptions: { value: Confidence | null; label: string }[] = [
     { value: null, label: t.confAny },
     { value: 'nominal', label: t.confNominal },
@@ -109,6 +116,15 @@ export function FiltersPanel() {
             {t.retry}
           </button>
         </div>
+      ) : null}
+
+      {/* Only when the backend holds both kinds; with one, the app is already on it. */}
+      {kinds.length > 1 ? (
+        <fieldset className="filters-section">
+          <legend>{t.kind}</legend>
+          <Segmented label={t.kind} options={kindOptions} value={processing} onChange={setProcessing} />
+          <p className="filters-note muted">{processing === 'NRT' ? t.kindNrtNote : t.kindSpNote}</p>
+        </fieldset>
       ) : null}
 
       <fieldset className="filters-section">

@@ -28,6 +28,7 @@ export const messages = {
     confidence_low: 'Low',
     confidence_nominal: 'Nominal',
     confidence_high: 'High',
+    confidence_unknown: 'Unknown',
     severity_critical: 'Critical',
     severity_high: 'High',
     severity_elevated: 'Elevated',

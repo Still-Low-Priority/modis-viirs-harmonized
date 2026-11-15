@@ -1,8 +1,7 @@
 export const messages = {
   en: {
     intro: 'Ask the backend to download fire detections from NASA FIRMS into its database.',
-    demoNote:
-      'The map still shows demo data: the backend can load detections but cannot serve them to this page yet.',
+    demoNote: 'The map is showing demo data because the backend did not answer when the page loaded. Reload the page once it is online.',
     backend: 'Backend',
     online: 'Online',
     offline: 'Unreachable',

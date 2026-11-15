@@ -34,7 +34,7 @@ acknowledgement). Basemap and colouring live in the map's Layers control.
 | `src/api/mock/` | deterministic demo data implementing the same `Api` interface |
 | `src/api/index.ts` | picks real vs mock (`VITE_API_MODE=auto\|real\|mock`, auto = probe `/api/meta`) |
 | `src/api/ingestion.ts` | real client for the endpoints the backend has today: `GET /api/health`, `POST /api/ingestion/jobs`, `GET /api/ingestion/jobs/{id}`; FIRMS product list, viewport-to-bbox conversion |
-| `src/api/queries.ts` | React Query hooks: `useMeta`, `useAreas`, `useDetections`, `useDetection`, `useTimeseries`, `useGrid`, `useHotspots`, `useScopedHotspots`, `useApiMode`, `useCommonFilters`, `useBackendHealth`, `useCreateIngestionJob`, `useIngestionJob` |
+| `src/api/queries.ts` | React Query hooks: `useMeta`, `useAreas`, `useDetections`, `useDetection`, `useTimeseries`, `useGrid`, `useHotspots`, `useScopedHotspots`, `useApiMode`, `useCommonFilters`, `useFullMeta`, `useBackendHealth`, `useCreateIngestionJob`, `useIngestionJob` |
 | `src/state/store.ts` | zustand store: filters, map viewport, selected place (`region`), selection, UI toggles |
 | `src/i18n/index.ts` | `useT(messages)`, `useLang()`, `fmt()`, `plural()`; English only |
 | `src/lib/` | `dates.ts` (UTC day maths), `format.ts`, `colors.ts`, `hotspots.ts` (clustering and severity rules) |
@@ -46,7 +46,7 @@ acknowledgement). Basemap and colouring live in the map's Layers control.
 ## Data flow
 
 1. The map writes its viewport to `store.viewBbox` (debounced).
-2. Filters write `dateFrom/dateTo/sources/daynight/minConfidence` to the store.
+2. Filters write `processing/dateFrom/dateTo/sources/daynight/minConfidence` to the store.
 3. Every query hook reads the store through `useCommonFilters()`, so map,
    summary, calendar and chart always describe the same slice of data.
 4. Clicking a point sets `store.selectedId`; the drawer loads its details.
@@ -54,16 +54,30 @@ acknowledgement). Basemap and colouring live in the map's Layers control.
    selected, every query uses its bbox instead of the viewport, the map fits it
    and draws its outline.
 
-## What the backend serves today
+## Backend and demo data
 
-Only `GET /api`, `GET /api/health`, `POST /api/ingestion/jobs` and
-`GET /api/ingestion/jobs/{task_id}`. Nothing returns detections yet, so
-`/api/meta` does not answer, `resolveApi()` picks demo data, and the map, the
-summary, the calendar and the charts show generated fires. They switch to the
-backend on their own once it implements the read endpoints from `types.ts`.
+On load `resolveApi()` asks `GET /api/meta`. If it answers, every panel reads
+the backend; if not (backend down, local work without it), the page falls back
+to generated demo data and says so in the header.
 
-The "Data" tab (`src/features/ingestion/`) is the part wired to the real
-backend, in demo mode too:
+The backend keeps two kinds of FIRMS products apart and answers one kind per
+request: `processing=NRT` (near real-time, recent weeks) or `processing=SP`
+(standard processing, the archive; the backend's default). A `source` of the
+other kind is a 422.
+
+- `store.processing` holds the selected kind; `useCommonFilters()` adds it to
+  every request. Switching it clears the sensor selection.
+- `useMeta()` returns meta narrowed to that kind (its sensors and the days they
+  cover), so filters, calendar and charts follow the switch without knowing
+  about it. `useFullMeta()` is the unfiltered answer.
+- `App` moves to a kind that has data when the selected one has none; the
+  "Recent / Archive" switch in Filters appears only when both have data.
+- Demo meta carries no kinds, so none of this applies to it.
+
+`confidence` can be null (raw value not mappable) and `detection_type` is null
+for NRT detections, which FIRMS ships without a type.
+
+The "Data" tab (`src/features/ingestion/`) always talks to the real backend:
 
 - it sends the selected place's bbox, or the map viewport, the chosen FIRMS
   product and a period of at most 31 days (`MAX_INGESTION_DAYS`; the backend has
@@ -75,6 +89,7 @@ backend, in demo mode too:
 - the backend cannot list jobs, so task ids are kept in `localStorage`
   (`mvh.ingestionJobs`, 10 newest) and each one is polled every 3 s until it is
   `SUCCESS`, `FAILURE` or `REVOKED`;
+- when a job is seen finishing, all data queries are refetched;
 - Celery forgets a result after a day and then reports the id as `PENDING`, so
   older jobs are shown as "No longer tracked" and not polled.
 

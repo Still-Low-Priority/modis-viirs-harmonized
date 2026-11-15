@@ -1,4 +1,5 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { ApiError } from '../../api/http'
 import { FIRMS_PRODUCTS, MAX_INGESTION_DAYS, firmsRequestCount, isNearRealTime, toIngestionBbox } from '../../api/ingestion'
 import { useApiMode, useBackendHealth, useCreateIngestionJob, useIngestionJob } from '../../api/queries'
@@ -232,6 +233,19 @@ function JobItem({ job, t, lang }: { job: StoredJob; t: Messages; lang: ReturnTy
   const expired = isExpired(job)
   const query = useIngestionJob(job.taskId, !expired)
   const status = query.data?.status
+
+  // New detections are in the database: the map, the calendar and the charts
+  // (and the available date range) are stale now.
+  // Jobs restored from an earlier visit finished long ago; only a job seen
+  // going from running to SUCCESS in this session triggers a refresh.
+  const queryClient = useQueryClient()
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (status && status !== 'SUCCESS') wasRunning.current = true
+    if (status !== 'SUCCESS' || !wasRunning.current) return
+    wasRunning.current = false
+    void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'health' && q.queryKey[0] !== 'ingestion-job' })
+  }, [status, queryClient])
 
   let label: string
   let tone: Tone

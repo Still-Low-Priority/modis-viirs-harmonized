@@ -71,7 +71,7 @@ describe('IngestionPanel', () => {
     setup()
     expect(await screen.findByText('Online')).toBeInTheDocument()
     expect(screen.getAllByRole('option')).toHaveLength(8)
-    expect(screen.getByText(/still shows demo data/)).toBeInTheDocument()
+    expect(screen.getByText(/showing demo data/)).toBeInTheDocument()
   })
 
   it('starts a job for the map view with the chosen product and period, then lists it with its status', async () => {

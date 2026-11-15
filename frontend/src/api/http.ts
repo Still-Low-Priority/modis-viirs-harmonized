@@ -25,6 +25,7 @@ export function filtersToParams(f: CommonFilters): URLSearchParams {
   const p = new URLSearchParams()
   p.set('date_from', f.date_from)
   p.set('date_to', f.date_to)
+  if (f.processing) p.set('processing', f.processing)
   if (f.area_id != null) p.set('area_id', String(f.area_id))
   else if (f.bbox) p.set('bbox', f.bbox.map((n) => +n.toFixed(4)).join(','))
   for (const s of f.source ?? []) p.append('source', s)

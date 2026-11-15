@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Bbox, Confidence, DayNight } from '../api/types'
+import type { Bbox, Confidence, DayNight, Processing } from '../api/types'
 import type { Place } from '../lib/geo/types'
 import { addDays, todayUtc } from '../lib/dates'
 
@@ -11,7 +11,9 @@ export interface AppState {
   // --- filters (sent to the API) ---
   dateFrom: string
   dateTo: string
-  /** Selected source_product values. Empty = all sources. */
+  /** Near real-time (recent weeks) or standard processing (archive). */
+  processing: Processing
+  /** Selected source_product values of that kind. Empty = all of them. */
   sources: string[]
   daynight: DayNight | null
   minConfidence: Confidence | null
@@ -41,6 +43,8 @@ export interface AppState {
 
   // --- actions ---
   setDateRange: (from: string, to: string) => void
+  /** Switches the kind of products; the sensor selection belongs to the old kind, so it is cleared. */
+  setProcessing: (v: Processing) => void
   toggleSource: (source: string) => void
   setSources: (sources: string[]) => void
   setDaynight: (v: DayNight | null) => void
@@ -72,6 +76,7 @@ const wideScreen = typeof window === 'undefined' || !window.matchMedia || window
 
 export const useStore = create<AppState>((set) => ({
   ...defaultRange(),
+  processing: 'NRT',
   sources: [],
   daynight: null,
   minConfidence: null,
@@ -89,6 +94,7 @@ export const useStore = create<AppState>((set) => ({
   selectedHotspotId: null,
 
   setDateRange: (from, to) => set(from <= to ? { dateFrom: from, dateTo: to } : { dateFrom: to, dateTo: from }),
+  setProcessing: (processing) => set((s) => (s.processing === processing ? s : { processing, sources: [] })),
   toggleSource: (source) =>
     set((s) => ({ sources: s.sources.includes(source) ? s.sources.filter((x) => x !== source) : [...s.sources, source] })),
   setSources: (sources) => set({ sources }),

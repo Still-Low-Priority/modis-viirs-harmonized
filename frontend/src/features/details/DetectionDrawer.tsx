@@ -73,7 +73,8 @@ function frpGradient(): string {
   return `linear-gradient(90deg, ${stops.join(', ')})`
 }
 
-function typeLabel(t: Msgs, n: number): string {
+function typeLabel(t: Msgs, n: number | null): string {
+  if (n == null) return t.typeNone
   const known: Record<number, string> = { 0: t.type0, 1: t.type1, 2: t.type2, 3: t.type3 }
   return known[n] ?? fmt(t.typeUnknown, { n })
 }
@@ -132,7 +133,7 @@ function Content({ d }: { d: DetectionDetail }) {
   const isModis = /^\d+$/.test(d.confidence_raw.trim())
   const isViirs = /^[lnh]$/i.test(d.confidence_raw.trim())
   const rawNote = isModis ? t.rawModis : isViirs ? t.rawViirs : t.rawOther
-  const level = t[`level_${d.confidence}`]
+  const level = d.confidence ? t[`level_${d.confidence}`] : t.levelUnknown
   const frpPos = Math.max(0, Math.min(100, (d.frp / FRP_MAX) * 100))
 
   return (
@@ -209,7 +210,7 @@ function Content({ d }: { d: DetectionDetail }) {
       <Section title={t.secConfidence}>
         <dl className="details-rows">
           <Row label={t.harmonised}>
-            <span className="details-pill" style={{ background: CONFIDENCE_COLORS[d.confidence] }}>
+            <span className="details-pill" style={{ background: d.confidence ? CONFIDENCE_COLORS[d.confidence] : undefined }}>
               {level}
             </span>
           </Row>

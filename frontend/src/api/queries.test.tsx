@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Place } from '../lib/geo/types'
 import { useStore } from '../state/store'
 import { ApiProvider } from './ApiProvider'
-import { useCommonFilters, useDetection, useDetections, useGrid, useApiMode, useHotspots, useScopedHotspots } from './queries'
+import { processingKinds, scopeMeta, useCommonFilters, useDetection, useDetections, useGrid, useApiMode, useHotspots, useScopedHotspots } from './queries'
 import type { Api, DetectionFeature, Hotspot, HotspotCollection } from './types'
 
 // The country outline is only needed by useScopedHotspots; "inside" here means west of 30 E.
@@ -93,14 +93,14 @@ beforeEach(() => {
 })
 
 describe('useCommonFilters', () => {
-  it('returns only the dates for an empty store', () => {
+  it('returns only the dates and the product kind for an empty store', () => {
     const { result } = renderHook(() => useCommonFilters())
-    expect(result.current).toEqual({ date_from: '2026-08-01', date_to: '2026-08-07' })
+    expect(result.current).toEqual({ date_from: '2026-08-01', date_to: '2026-08-07', processing: 'NRT' })
   })
 
   it('has no keys for unset optional filters (not even undefined)', () => {
     const { result } = renderHook(() => useCommonFilters())
-    expect(Object.keys(result.current).sort()).toEqual(['date_from', 'date_to'])
+    expect(Object.keys(result.current).sort()).toEqual(['date_from', 'date_to', 'processing'])
   })
 
   it('maps a populated store to API names', () => {
@@ -115,6 +115,7 @@ describe('useCommonFilters', () => {
     expect(result.current).toEqual({
       date_from: '2026-08-01',
       date_to: '2026-08-07',
+      processing: 'NRT',
       bbox: [1, 2, 3, 4],
       source: ['MODIS_NRT', 'VIIRS_SNPP_NRT'],
       daynight: 'N',
@@ -207,6 +208,7 @@ describe('useDetections', () => {
     expect(vi.mocked(api.getDetections).mock.calls[0][0]).toEqual({
       date_from: '2026-08-01',
       date_to: '2026-08-07',
+      processing: 'NRT',
       bbox: [10, 20, 30, 40],
       daynight: 'D',
       limit: 123,
@@ -286,6 +288,7 @@ describe('useHotspots', () => {
     expect(vi.mocked(api.getHotspots).mock.calls[0][0]).toEqual({
       date_from: '2026-08-01',
       date_to: '2026-08-07',
+      processing: 'NRT',
       bbox: [10, 20, 30, 40],
       radius_km: 10,
       min_count: 10,
@@ -347,5 +350,51 @@ describe('useScopedHotspots', () => {
     expect(result.current.data!.items.map((h) => h.id)).toEqual(['a', 'b'])
     expect(result.current.data!.total).toBe(3)
     expect(vi.mocked(api.getHotspots).mock.calls[0][0].limit).toBe(2)
+  })
+})
+
+describe('product kinds', () => {
+  const meta = {
+    sources: [
+      { source_product: 'MODIS_SP', processing: 'SP' as const, instrument: 'MODIS', satellites: ['Aqua'], date_min: '2026-02-01', date_max: '2026-02-02' },
+      { source_product: 'VIIRS_NOAA20_NRT', processing: 'NRT' as const, instrument: 'VIIRS', satellites: ['N20'], date_min: '2026-11-12', date_max: '2026-11-13' },
+      { source_product: 'MODIS_NRT', processing: 'NRT' as const, instrument: 'MODIS', satellites: ['Terra'], date_min: '2026-11-01', date_max: '2026-11-10' },
+    ],
+    date_min: '2026-02-01',
+    date_max: '2026-11-13',
+    last_ingested_at: '2026-11-15T15:47:07Z',
+  }
+
+  it('lists the kinds the backend has data for, recent first', () => {
+    expect(processingKinds(meta)).toEqual(['NRT', 'SP'])
+    expect(processingKinds({ ...meta, sources: meta.sources.slice(0, 1) })).toEqual(['SP'])
+    expect(processingKinds(undefined)).toEqual([])
+  })
+
+  it('narrows sensors and the date range to one kind', () => {
+    const nrt = scopeMeta(meta, 'NRT')
+    expect(nrt.sources.map((s) => s.source_product)).toEqual(['VIIRS_NOAA20_NRT', 'MODIS_NRT'])
+    expect([nrt.date_min, nrt.date_max]).toEqual(['2026-11-01', '2026-11-13'])
+    const sp = scopeMeta(meta, 'SP')
+    expect(sp.sources.map((s) => s.source_product)).toEqual(['MODIS_SP'])
+    expect([sp.date_min, sp.date_max]).toEqual(['2026-02-01', '2026-02-02'])
+    expect(sp.last_ingested_at).toBe(meta.last_ingested_at)
+  })
+
+  it('reports no dates for a kind without data', () => {
+    const onlySp = { ...meta, sources: meta.sources.slice(0, 1) }
+    expect(scopeMeta(onlySp, 'NRT')).toMatchObject({ sources: [], date_min: null, date_max: null })
+  })
+
+  it('leaves meta without kinds (demo data) untouched', () => {
+    const demo = { ...meta, sources: meta.sources.map(({ source_product, instrument, satellites }) => ({ source_product, instrument, satellites })) }
+    expect(scopeMeta(demo, 'SP')).toBe(demo)
+  })
+
+  it('sends the selected kind and clears the sensor selection on a switch', () => {
+    act(() => useStore.getState().setSources(['MODIS_NRT']))
+    act(() => useStore.getState().setProcessing('SP'))
+    const { result } = renderHook(() => useCommonFilters())
+    expect(result.current).toEqual({ date_from: '2026-08-01', date_to: '2026-08-07', processing: 'SP' })
   })
 })
