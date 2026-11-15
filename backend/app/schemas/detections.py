@@ -50,7 +50,8 @@ class DetectionDetailResponse(BaseModel):
     instrument: str
     confidence: Literal["low", "nominal", "high"] | None
     confidence_raw: str
-    detection_type: int
+    # FIRMS sends a detection type only for Standard Processing products.
+    detection_type: int | None
     frp: float
     brightness: float | None
     bright_t31: float | None

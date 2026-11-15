@@ -68,7 +68,10 @@ async def get_timeseries(
             interval_steps[interval],
         )
         .table_valued("period")
-        .alias("periods")
+        # Renders "AS periods(period)". A plain alias gives "AS periods",
+        # where the only column is called "periods" and periods.period
+        # does not exist.
+        .render_derived(name="periods")
     )
 
     # Convert timestamptz to UTC before grouping.
