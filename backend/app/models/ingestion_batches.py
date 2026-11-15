@@ -5,6 +5,9 @@ from datetime import datetime, date
 
 from app.core.database import Base
 from app.core.enums import BatchStatus
+# Registers the "areas" table: without it the area_id foreign key cannot be
+# resolved in processes that never import Area themselves (the Celery worker).
+from app.models.areas import Area  # noqa: F401
 
 class IngestionBatch(Base):
     __tablename__ = "ingestion_batches"

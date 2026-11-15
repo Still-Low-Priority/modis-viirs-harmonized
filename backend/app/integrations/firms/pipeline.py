@@ -18,6 +18,22 @@ from app.integrations.firms.planner import plan_ingestion
 
 logger = logging.getLogger(__name__)
 
+# FIRMS reports some errors (invalid MAP_KEY, exceeded transaction limit)
+# as a plain-text body. Without this check such a body parses as a CSV
+# with zero rows and the period is recorded as successfully ingested.
+REQUIRED_AREA_CSV_HEADERS = frozenset(
+    {"latitude", "longitude", "acq_date", "acq_time"}
+)
+
+def ensure_area_csv_headers(csv_text: str) -> None:
+    header_line = csv_text.lstrip().splitlines()[0] if csv_text.strip() else ""
+    headers = {header.strip() for header in header_line.split(",")}
+
+    if not REQUIRED_AREA_CSV_HEADERS <= headers:
+        raise ValueError(
+            f"Unexpected FIRMS area response: {header_line[:200]!r}"
+        )
+
 def build_bbox_parts(
     *,
     west: float,
@@ -82,6 +98,7 @@ async def fetch_period_records(
             start_date=start_date,
         )
 
+        ensure_area_csv_headers(csv_text)
         records.extend(parse_firms_csv(csv_text))
 
     return records
@@ -121,7 +138,8 @@ async def run_ingestion(
     start_date: date,
     end_date: date,
     area_id: int | None = None
-) -> None:
+) -> dict[str, int]:
+    """Returns how many batches were processed and how many of them failed."""
     if (
         isinstance(start_date, datetime)
         or not isinstance(start_date, date)
@@ -154,7 +172,7 @@ async def run_ingestion(
     effective_end = min(end_date, source_range.max_date)
 
     if effective_start > effective_end:
-        return
+        return {"batches_total": 0, "batches_failed": 0}
 
     requested_availability = {
         source: FIRMSDateRange(
@@ -177,7 +195,9 @@ async def run_ingestion(
 
     if not planned_ranges:
         await session.rollback()
-        return
+        return {"batches_total": 0, "batches_failed": 0}
+
+    batches_failed = 0
 
     # 3. Process every planned period independently.
     for date_from, date_to in planned_ranges:
@@ -253,6 +273,8 @@ async def run_ingestion(
             await session.commit()
 
         except Exception as exc:
+            batches_failed += 1
+
             # Roll back detections and unfinished batch updates.
             await session.rollback()
 
@@ -286,3 +308,8 @@ async def run_ingestion(
                     "Could not mark ingestion batch %s as FAILED.",
                     batch_id,
                 )
+
+    return {
+        "batches_total": len(planned_ranges),
+        "batches_failed": batches_failed,
+    }

@@ -21,7 +21,7 @@ async def _run_ingestion_async(
     start_date: date,
     end_date: date,
     area_id: int | None = None,
-) -> None:
+) -> dict[str, int]:
     database_url = (
         get_database_settings().DATABASE_URL.get_secret_value()
     )
@@ -40,7 +40,7 @@ async def _run_ingestion_async(
     try:
         async with session_factory() as session:
             async with FIRMSClient(firms_map_key) as client:
-                await run_ingestion(
+                return await run_ingestion(
                     session,
                     client,
                     source,
@@ -74,7 +74,7 @@ def run_firms_ingestion_task(
     period_start = date.fromisoformat(start_date)
     period_end = date.fromisoformat(end_date)
 
-    asyncio.run(
+    stats = asyncio.run(
         _run_ingestion_async(
             product,
             west=west,
@@ -86,6 +86,14 @@ def run_firms_ingestion_task(
             area_id=area_id,
         )
     )
+
+    # run_ingestion records per-batch errors in ingestion_batches and keeps
+    # going; surface them so the job is not reported as SUCCESS.
+    if stats["batches_failed"]:
+        raise RuntimeError(
+            f"{stats['batches_failed']} of {stats['batches_total']} "
+            "ingestion batches failed."
+        )
 
     return {
         "source": product.value,

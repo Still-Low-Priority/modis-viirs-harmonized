@@ -1,7 +1,12 @@
+import logging
+
 from celery import Celery
 
 from app.core.settings import get_celery_settings
 
+
+# httpx logs every request URL at INFO, and FIRMS URLs contain the MAP_KEY.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 celery_settings = get_celery_settings()
 
