@@ -11,7 +11,7 @@ from app.integrations.firms.availability import FIRMSDateRange, parse_data_avail
 from app.integrations.firms.normalizer import normalize_firms_record
 from app.integrations.firms.validator import validate_firms_records
 from app.models.ingestion_batches import IngestionBatch
-from app.repositories.ingestion_batches import create_ingestion_batch, mark_batch_running, complete_ingestion_batch, fail_ingestion_batch
+from app.repositories.ingestion_batches import create_ingestion_batch, mark_batch_running, complete_ingestion_batch, fail_ingestion_batch, acquire_ingestion_scope_lock
 from app.repositories.fire_detections import insert_fire_detections
 from app.integrations.firms.persistence import prepare_detection_records
 from app.integrations.firms.planner import plan_ingestion
@@ -120,7 +120,7 @@ async def run_ingestion(
     north: float,
     start_date: date,
     end_date: date,
-    area_id: int | None = None
+    area_id: int | None = None,
 ) -> None:
     if (
         isinstance(start_date, datetime)
@@ -147,7 +147,9 @@ async def run_ingestion(
     source_range = availability.get(source)
 
     if source_range is None:
-        raise ValueError(f"No availability information for {source.value}.")
+        raise ValueError(
+            f"No availability information for {source.value}."
+        )
 
     # Restrict planning to the requested date range.
     effective_start = max(start_date, source_range.min_date)
@@ -163,7 +165,20 @@ async def run_ingestion(
         )
     }
 
-    # 2. Build the ingestion plan.
+    # 2. Acquire a PostgreSQL transaction-level advisory lock.
+    # Only one worker can plan the same Area + Product + Bbox
+    # at a time.
+    await acquire_ingestion_scope_lock(
+        session,
+        source,
+        area_id=area_id,
+        west=west,
+        south=south,
+        east=east,
+        north=north,
+    )
+
+    # 3. Build the ingestion plan while holding the lock.
     planned_ranges = await plan_ingestion(
         session,
         requested_availability,
@@ -172,14 +187,18 @@ async def run_ingestion(
         south=south,
         east=east,
         north=north,
+        area_id=area_id,
         nrt_refresh_end=source_range.max_date,
     )
 
     if not planned_ranges:
+        # Release the advisory lock.
         await session.rollback()
         return
 
-    # 3. Process every planned period independently.
+    # 4. Reserve every planned period before releasing the lock.
+    batch_ids = []
+
     for date_from, date_to in planned_ranges:
         batch = await create_ingestion_batch(
             session,
@@ -190,39 +209,47 @@ async def run_ingestion(
             north=north,
             date_from=date_from,
             date_to=date_to,
-            area_id=area_id
+            area_id=area_id,
         )
 
-        batch_id = batch.id
+        batch_ids.append(batch.id)
 
-        # Persist PENDING before starting external work.
-        await session.commit()
+    # One transaction commits all PENDING batches and releases
+    # the advisory lock.
+    await session.commit()
 
+    # 5. Process each reserved batch independently.
+    for batch_id in batch_ids:
         try:
             batch = await session.get(IngestionBatch, batch_id)
 
             if batch is None:
-                raise RuntimeError(f"Batch {batch_id} was not found.")
+                raise RuntimeError(
+                    f"Batch {batch_id} was not found."
+                )
 
-            # 4. Mark batch as RUNNING.
+            # 6. Mark batch as RUNNING.
             await mark_batch_running(session, batch)
             await session.commit()
 
-            # 5. Download and parse CSV.
+            # 7. Download and parse CSV.
             raw_records = await fetch_period_records(
                 client,
                 source,
                 bbox_parts,
-                date_from,
-                date_to,
+                batch.date_from,
+                batch.date_to,
             )
 
-            # 6. Normalize and validate.
+            # 8. Normalize and validate.
             valid_records, records_rejected = (
-                normalize_and_validate_records(raw_records, source)
+                normalize_and_validate_records(
+                    raw_records,
+                    source,
+                )
             )
 
-            # 7. Prepare records and persist them.
+            # 9. Prepare and persist records.
             prepared_records = prepare_detection_records(
                 valid_records,
                 batch_id,
@@ -233,14 +260,21 @@ async def run_ingestion(
                 prepared_records,
             )
 
-            records_skipped = len(valid_records) - records_inserted
+            records_skipped = (
+                len(valid_records) - records_inserted
+            )
 
-            batch = await session.get(IngestionBatch, batch_id)
+            batch = await session.get(
+                IngestionBatch,
+                batch_id,
+            )
 
             if batch is None:
-                raise RuntimeError(f"Batch {batch_id} was not found.")
+                raise RuntimeError(
+                    f"Batch {batch_id} was not found."
+                )
 
-            # Update batch statistics and status.
+            # 10. Update batch statistics and status.
             await complete_ingestion_batch(
                 session,
                 batch,
@@ -278,10 +312,12 @@ async def run_ingestion(
                         failed_batch,
                         error_message,
                     )
+
                     await session.commit()
 
             except Exception:
                 await session.rollback()
+
                 logger.exception(
                     "Could not mark ingestion batch %s as FAILED.",
                     batch_id,

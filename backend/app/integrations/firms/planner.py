@@ -81,6 +81,7 @@ async def plan_ingestion(
     south: float,
     east: float,
     north: float,
+    area_id: int | None = None,
     max_days: int = 5,
     nrt_refresh_days: int = 5,
     nrt_refresh_end: date | None = None,
@@ -118,6 +119,7 @@ async def plan_ingestion(
         south=south,
         east=east,
         north=north,
+        area_id=area_id
     )
 
     missing_ranges = []
@@ -139,6 +141,7 @@ async def plan_ingestion(
             south=south,
             east=east,
             north=north,
+            area_id=area_id
         )
 
         # Use the actual FIRMS availability endpoint as the

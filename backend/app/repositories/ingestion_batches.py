@@ -1,10 +1,64 @@
 from datetime import date, datetime, timezone
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+import hashlib
+import struct
+from sqlalchemy import select, text
 
 from app.core.enums import BatchStatus
 from app.integrations.firms.enums import FIRMSProduct
 from app.models.ingestion_batches import IngestionBatch
+
+def build_ingestion_lock_keys(
+    source: FIRMSProduct,
+    *,
+    area_id: int | None,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> tuple[int, int]:
+    scope = "\0".join([
+        source.value,
+        str(area_id) if area_id is not None else "NULL",
+        *(float(value).hex() for value in (
+            west,
+            south,
+            east,
+            north,
+        )),
+    ])
+
+    digest = hashlib.sha256(scope.encode("utf-8")).digest()
+
+    return struct.unpack("!ii", digest[:8])
+
+
+async def acquire_ingestion_scope_lock(
+    session: AsyncSession,
+    source: FIRMSProduct,
+    *,
+    area_id: int | None,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> None:
+    key1, key2 = build_ingestion_lock_keys(
+        source,
+        area_id=area_id,
+        west=west,
+        south=south,
+        east=east,
+        north=north,
+    )
+
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:key1, :key2)"),
+        {
+            "key1": key1,
+            "key2": key2,
+        },
+    )
 
 async def get_existing_batch_ranges(
     session: AsyncSession,
@@ -14,6 +68,7 @@ async def get_existing_batch_ranges(
     south: float,
     east: float,
     north: float,
+    area_id: int | None = None
 ) -> list[tuple[date, date]]:
     stmt = (
         select(IngestionBatch.date_from, IngestionBatch.date_to)
@@ -23,6 +78,7 @@ async def get_existing_batch_ranges(
             IngestionBatch.south == south,
             IngestionBatch.east == east,
             IngestionBatch.north == north,
+            IngestionBatch.area_id == area_id,
             IngestionBatch.status.in_([
                 BatchStatus.COMPLETED,
                 BatchStatus.PENDING,
@@ -114,6 +170,7 @@ async def get_active_batch_ranges(
     south: float,
     east: float,
     north: float,
+    area_id: int | None = None
 ) -> list[tuple[date, date]]:
     stmt = (
         select(IngestionBatch.date_from, IngestionBatch.date_to)
@@ -123,6 +180,7 @@ async def get_active_batch_ranges(
             IngestionBatch.south == south,
             IngestionBatch.east == east,
             IngestionBatch.north == north,
+            IngestionBatch.area_id == area_id,
             IngestionBatch.status.in_([
                 BatchStatus.PENDING,
                 BatchStatus.RUNNING,
