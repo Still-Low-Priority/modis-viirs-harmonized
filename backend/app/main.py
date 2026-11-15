@@ -1,17 +1,19 @@
-# TODO(backend): TEMPORARY STUB so the backend container starts on the server.
-# Added by DevOps until the real main.py lands; replace this file with yours.
-# Please keep GET /api/health: the CI/CD health check calls it.
-#
-# nginx proxies /api/ to the backend without stripping the prefix, so every
-# route lives under /api.
 from fastapi import FastAPI
 
-app = FastAPI(title="MODIS/VIIRS Harmonized API (stub)")
+from app.api.routes.ingestion import router as ingestion_router
+
+
+app = FastAPI(title="MODIS/VIIRS Harmonized API")
+
+app.include_router(ingestion_router)
 
 
 @app.get("/api")
 async def root() -> dict[str, str]:
-    return {"service": "modis-viirs-harmonized", "status": "stub"}
+    return {
+        "service": "modis-viirs-harmonized",
+        "status": "ok",
+    }
 
 
 @app.get("/api/health")
