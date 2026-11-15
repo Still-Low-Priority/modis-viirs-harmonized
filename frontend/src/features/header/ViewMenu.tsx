@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useT } from '../../i18n'
-import { useStore } from '../../state/store'
+import { useStore, type SidebarTab } from '../../state/store'
 import { AboutDialog } from './AboutDialog'
-import { CheckIcon, ChartIcon, ChevronIcon, FiltersIcon, InfoIcon, LayersIcon, ListIcon, RingsIcon } from './icons'
+import { CheckIcon, ChartIcon, ChevronIcon, DownloadIcon, FiltersIcon, InfoIcon, LayersIcon, ListIcon, RingsIcon } from './icons'
 import { messages } from './messages'
 
 interface CheckItem {
@@ -31,13 +31,14 @@ export function ViewMenu() {
   const showHotspots = useStore((s) => s.showHotspots)
   const setShowHotspots = useStore((s) => s.setShowHotspots)
 
-  const panelItem = (tab: 'hotspots' | 'filters', label: string, icon: ReactNode): CheckItem => {
+  const panelItem = (tab: SidebarTab, label: string, icon: ReactNode): CheckItem => {
     const checked = sidebarOpen && sidebarTab === tab
     return { key: tab, label, icon, checked, onSelect: () => (checked ? setSidebarOpen(false) : setSidebarTab(tab)) }
   }
   const items: CheckItem[] = [
     panelItem('hotspots', t.hotspotsPanel, <ListIcon />),
     panelItem('filters', t.filtersPanel, <FiltersIcon />),
+    panelItem('ingest', t.ingestPanel, <DownloadIcon />),
     { key: 'charts', label: t.chartsPanel, icon: <ChartIcon />, checked: bottomOpen, onSelect: () => setBottomOpen(!bottomOpen) },
     { key: 'rings', label: t.rings, icon: <RingsIcon />, checked: showHotspots, onSelect: () => setShowHotspots(!showHotspots) },
   ]

@@ -1,11 +1,12 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { useContext } from 'react'
 import { useStore } from '../state/store'
 import { ApiContext } from './context'
 import type { ApiMode } from './index'
+import { ingestionApi, isFinished } from './ingestion'
 import { loadCountryPolygon, pointInPolygon } from '../lib/geo'
 import { DEFAULT_LIMIT, DEFAULT_MIN_COUNT, DEFAULT_RADIUS_KM, clusterDetections } from '../lib/hotspots'
-import type { Api, CommonFilters, HotspotCollection, Interval } from './types'
+import type { Api, CommonFilters, HotspotCollection, IngestionJobCreate, Interval } from './types'
 
 function useApiContext() {
   const ctx = useContext(ApiContext)
@@ -179,4 +180,34 @@ export function useScopedHotspots(opts: { limit?: number } = {}) {
     data = { ...data, items: data.items.slice(0, limit) }
   }
   return { ...query, data, isLoading: query.isLoading || (country != null && outline.isLoading) }
+}
+
+// --- Ingestion: always the real backend, whatever `useApiMode()` says. The
+// read endpoints may still be demo data while these already work.
+
+/** Is the backend reachable? Re-checked every 30 s. */
+export function useBackendHealth() {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: ({ signal }) => ingestionApi.getHealth(signal),
+    refetchInterval: 30_000,
+    staleTime: 0,
+    retry: false,
+  })
+}
+
+export function useCreateIngestionJob() {
+  return useMutation({ mutationFn: (job: IngestionJobCreate) => ingestionApi.createJob(job) })
+}
+
+/** Status of one job, polled until it finishes. */
+export function useIngestionJob(taskId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['ingestion-job', taskId],
+    queryFn: ({ signal }) => ingestionApi.getJob(taskId, signal),
+    enabled,
+    refetchInterval: (query) => (query.state.data && isFinished(query.state.data.status) ? false : 3000),
+    staleTime: 0,
+    retry: false,
+  })
 }

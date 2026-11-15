@@ -5,7 +5,7 @@ import { addDays, todayUtc } from '../lib/dates'
 
 export type ColorBy = 'source' | 'confidence' | 'frp'
 export type Basemap = 'dark' | 'light' | 'satellite'
-export type SidebarTab = 'hotspots' | 'filters'
+export type SidebarTab = 'hotspots' | 'filters' | 'ingest'
 
 export interface AppState {
   // --- filters (sent to the API) ---

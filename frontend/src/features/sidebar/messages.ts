@@ -3,6 +3,7 @@ export const messages = {
     tabs: 'Side panel',
     hotspots: 'Hotspots',
     filters: 'Filters',
+    ingest: 'Data',
     close: 'Close',
   },
 }
