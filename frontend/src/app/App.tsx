@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { useMeta } from '../api/queries'
+import { processingKinds, useFullMeta, useMeta } from '../api/queries'
 import { ActivityCalendar } from '../features/calendar/ActivityCalendar'
 import { DetectionDrawer } from '../features/details/DetectionDrawer'
 import { Header } from '../features/header/Header'
@@ -18,6 +18,14 @@ export default function App() {
   const sidebarOpen = useStore((s) => s.sidebarOpen)
   const bottomOpen = useStore((s) => s.bottomOpen)
   const { data: meta } = useMeta()
+  const { data: fullMeta } = useFullMeta()
+
+  // The backend may hold only archive data (or only recent data): start there.
+  useEffect(() => {
+    const kinds = processingKinds(fullMeta)
+    const { processing, setProcessing } = useStore.getState()
+    if (kinds.length > 0 && !kinds.includes(processing)) setProcessing(kinds[0])
+  }, [fullMeta])
 
   // Once we know which days have data, move the default period onto them.
   useEffect(() => {

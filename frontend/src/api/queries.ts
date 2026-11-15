@@ -1,11 +1,12 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useContext } from 'react'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
+import { useContext, useMemo } from 'react'
 import { useStore } from '../state/store'
 import { ApiContext } from './context'
 import type { ApiMode } from './index'
+import { ingestionApi, isFinished } from './ingestion'
 import { loadCountryPolygon, pointInPolygon } from '../lib/geo'
 import { DEFAULT_LIMIT, DEFAULT_MIN_COUNT, DEFAULT_RADIUS_KM, clusterDetections } from '../lib/hotspots'
-import type { Api, CommonFilters, HotspotCollection, Interval } from './types'
+import type { Api, CommonFilters, HotspotCollection, IngestionJobCreate, Interval, Meta, Processing } from './types'
 
 function useApiContext() {
   const ctx = useContext(ApiContext)
@@ -33,12 +34,14 @@ export function useCommonFilters(opts: { withBbox?: boolean } = {}): CommonFilte
   const sources = useStore((s) => s.sources)
   const daynight = useStore((s) => s.daynight)
   const minConfidence = useStore((s) => s.minConfidence)
+  const processing = useStore((s) => s.processing)
   const viewBbox = useStore((s) => s.viewBbox)
   const regionBbox = useStore((s) => s.region?.bbox ?? null)
   const bbox = regionBbox ?? viewBbox
   return {
     date_from: dateFrom,
     date_to: dateTo,
+    processing,
     ...(withBbox && bbox ? { bbox } : {}),
     ...(sources.length ? { source: sources } : {}),
     ...(daynight ? { daynight } : {}),
@@ -46,9 +49,45 @@ export function useCommonFilters(opts: { withBbox?: boolean } = {}): CommonFilte
   }
 }
 
-export function useMeta() {
+/** Kinds of products the backend has data for. Empty for demo data, which has no kinds. */
+export function processingKinds(meta: Meta | undefined): Processing[] {
+  const kinds = new Set<Processing>()
+  for (const s of meta?.sources ?? []) if (s.processing) kinds.add(s.processing)
+  return (['NRT', 'SP'] as const).filter((k) => kinds.has(k))
+}
+
+/**
+ * Meta as it applies to one kind of products: only its sensors, and the days
+ * they cover. Meta without kinds (demo data) is returned unchanged.
+ */
+export function scopeMeta(meta: Meta, processing: Processing): Meta {
+  if (processingKinds(meta).length === 0) return meta
+  const sources = meta.sources.filter((s) => s.processing === processing)
+  const mins = sources.map((s) => s.date_min).filter((d): d is string => !!d)
+  const maxs = sources.map((s) => s.date_max).filter((d): d is string => !!d)
+  return {
+    ...meta,
+    sources,
+    date_min: mins.length ? mins.reduce((a, b) => (a < b ? a : b)) : null,
+    date_max: maxs.length ? maxs.reduce((a, b) => (a > b ? a : b)) : null,
+  }
+}
+
+/** Meta exactly as the backend sent it: every kind of products together. */
+export function useFullMeta() {
   const api = useApi()
   return useQuery({ queryKey: ['meta'], queryFn: ({ signal }) => api.getMeta(signal), staleTime: 5 * 60_000 })
+}
+
+/**
+ * Meta for the selected kind of products (`store.processing`), so sensor
+ * lists, date limits, the calendar and the charts all follow the switch.
+ */
+export function useMeta() {
+  const query = useFullMeta()
+  const processing = useStore((s) => s.processing)
+  const data = useMemo(() => (query.data ? scopeMeta(query.data, processing) : undefined), [query.data, processing])
+  return { ...query, data }
 }
 
 export function useAreas() {
@@ -179,4 +218,34 @@ export function useScopedHotspots(opts: { limit?: number } = {}) {
     data = { ...data, items: data.items.slice(0, limit) }
   }
   return { ...query, data, isLoading: query.isLoading || (country != null && outline.isLoading) }
+}
+
+// --- Ingestion: always the real backend, whatever `useApiMode()` says. The
+// read endpoints may still be demo data while these already work.
+
+/** Is the backend reachable? Re-checked every 30 s. */
+export function useBackendHealth() {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: ({ signal }) => ingestionApi.getHealth(signal),
+    refetchInterval: 30_000,
+    staleTime: 0,
+    retry: false,
+  })
+}
+
+export function useCreateIngestionJob() {
+  return useMutation({ mutationFn: (job: IngestionJobCreate) => ingestionApi.createJob(job) })
+}
+
+/** Status of one job, polled until it finishes. */
+export function useIngestionJob(taskId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['ingestion-job', taskId],
+    queryFn: ({ signal }) => ingestionApi.getJob(taskId, signal),
+    enabled,
+    refetchInterval: (query) => (query.state.data && isFinished(query.state.data.status) ? false : 3000),
+    staleTime: 0,
+    retry: false,
+  })
 }

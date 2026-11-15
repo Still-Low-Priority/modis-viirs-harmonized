@@ -479,7 +479,7 @@ describe('mock api: detail', () => {
         const expected = n < 30 ? 'low' : n < 80 ? 'nominal' : 'high'
         expect(d.confidence).toBe(expected)
       } else {
-        expect(d.confidence_raw).toBe({ low: 'l', nominal: 'n', high: 'h' }[d.confidence])
+        expect(d.confidence_raw).toBe({ low: 'l', nominal: 'n', high: 'h' }[d.confidence!])
       }
     }
   })

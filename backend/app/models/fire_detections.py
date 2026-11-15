@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Double, DateTime, ForeignKey, Identity, Integer, SmallInteger, String, CheckConstraint, func
+from sqlalchemy import BigInteger, Double, DateTime, ForeignKey, Identity, Index, Integer, SmallInteger, String, CheckConstraint, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
@@ -29,7 +29,15 @@ class FireDetection(Base):
         CheckConstraint(
             "frp >= 0",
             name="ck_fire_detections_frp_nonnegative",
-        )
+        ),
+        # Every read endpoint filters by period, product and bbox.
+        Index("ix_fire_detections_acquired_at", "acquired_at"),
+        Index("ix_fire_detections_lat_lon", "latitude", "longitude"),
+        Index(
+            "ix_fire_detections_source_acquired",
+            "source_product",
+            "acquired_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)

@@ -9,6 +9,7 @@ const KNOWN_SOURCES: Record<string, { color: string; label: string }> = {
   VIIRS_NOAA20_NRT: { color: '#3fc1ff', label: 'VIIRS NOAA-20' },
   VIIRS_NOAA20_SP: { color: '#3fc1ff', label: 'VIIRS NOAA-20' },
   VIIRS_NOAA21_NRT: { color: '#b98bff', label: 'VIIRS NOAA-21' },
+  VIIRS_NOAA21_SP: { color: '#b98bff', label: 'VIIRS NOAA-21' },
 }
 
 const FALLBACK = ['#5eead4', '#f472b6', '#a3e635', '#fb923c']

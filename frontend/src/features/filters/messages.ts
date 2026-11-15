@@ -1,5 +1,10 @@
 export const messages = {
   en: {
+    kind: 'Data',
+    kindNrt: 'Recent',
+    kindSp: 'Archive',
+    kindNrtNote: 'Near real-time detections, available within hours. They are replaced by archive data after a few months.',
+    kindSpNote: 'Standard processing: quality-checked detections, published a few months after acquisition.',
     period: 'Period',
     from: 'From',
     to: 'To',

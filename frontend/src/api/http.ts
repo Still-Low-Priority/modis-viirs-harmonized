@@ -25,6 +25,7 @@ export function filtersToParams(f: CommonFilters): URLSearchParams {
   const p = new URLSearchParams()
   p.set('date_from', f.date_from)
   p.set('date_to', f.date_to)
+  if (f.processing) p.set('processing', f.processing)
   if (f.area_id != null) p.set('area_id', String(f.area_id))
   else if (f.bbox) p.set('bbox', f.bbox.map((n) => +n.toFixed(4)).join(','))
   for (const s of f.source ?? []) p.append('source', s)
@@ -33,17 +34,40 @@ export function filtersToParams(f: CommonFilters): URLSearchParams {
   return p
 }
 
-async function get<T>(path: string, params?: URLSearchParams, signal?: AbortSignal): Promise<T> {
+/** Pydantic validation errors arrive as a list; show the first message, not raw JSON. */
+function describeDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const first = detail[0] as { msg?: unknown } | undefined
+    if (typeof first?.msg === 'string') return first.msg
+  }
+  return JSON.stringify(detail)
+}
+
+export async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return send<T>(path, {
+    method: 'POST',
+    signal,
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function get<T>(path: string, params?: URLSearchParams, signal?: AbortSignal): Promise<T> {
   const qs = params?.toString()
-  const res = await fetch(qs ? `${path}?${qs}` : path, {
+  return send<T>(qs ? `${path}?${qs}` : path, {
     signal,
     headers: { Accept: 'application/json' },
   })
+}
+
+async function send<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, init)
   if (!res.ok) {
     let detail = res.statusText
     try {
       const body = (await res.json()) as { detail?: unknown }
-      if (body.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+      if (body.detail) detail = describeDetail(body.detail)
     } catch {
       // not JSON, keep the status text
     }

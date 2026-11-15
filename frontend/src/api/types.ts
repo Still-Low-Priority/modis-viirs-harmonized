@@ -4,6 +4,11 @@
 export type Confidence = 'low' | 'nominal' | 'high'
 export type DayNight = 'D' | 'N'
 export type Interval = 'day' | 'month' | 'year'
+/**
+ * NRT = near real-time products (recent weeks), SP = standard processing
+ * (archive). The backend answers one kind per request and defaults to SP.
+ */
+export type Processing = 'NRT' | 'SP'
 
 /** [west, south, east, north]. west > east means the box crosses the antimeridian. */
 export type Bbox = [west: number, south: number, east: number, north: number]
@@ -12,6 +17,11 @@ export interface SourceInfo {
   source_product: string
   instrument: string
   satellites: string[]
+  /** Sent by the backend; demo data has no kinds and leaves it out. */
+  processing?: Processing
+  /** First and last day this product has detections in the database. */
+  date_min?: string | null
+  date_max?: string | null
 }
 
 export interface Meta {
@@ -25,6 +35,8 @@ export interface Meta {
 export interface CommonFilters {
   date_from: string
   date_to: string
+  /** Which kind of products to query. Every `source` must be of this kind. */
+  processing?: Processing
   bbox?: Bbox
   area_id?: number
   /** Empty or undefined = all sources. */
@@ -41,7 +53,8 @@ export interface DetectionProperties {
   acquired_at: string
   source_product: string
   instrument: string
-  confidence: Confidence
+  /** Null when the raw FIRMS value could not be mapped to a level. */
+  confidence: Confidence | null
   frp: number
   daynight: DayNight
 }
@@ -69,9 +82,10 @@ export interface DetectionDetail {
   source_product: string
   satellite: string
   instrument: string
-  confidence: Confidence
+  confidence: Confidence | null
   confidence_raw: string
-  detection_type: number
+  /** FIRMS reports a type only for standard-processing products; null for NRT. */
+  detection_type: number | null
   frp: number
   brightness: number | null
   bright_t31: number | null
@@ -174,4 +188,42 @@ export interface Api {
   getGrid(q: GridQuery, signal?: AbortSignal): Promise<GridCell[] | null>
   /** Optional endpoint (P1): resolves to null when the backend has no /hotspots yet. */
   getHotspots(q: HotspotsQuery, signal?: AbortSignal): Promise<HotspotCollection | null>
+}
+
+// --- Ingestion (POST/GET /api/ingestion/jobs). These endpoints exist in the
+// backend today; they are not part of `Api` because demo mode has no stand-in
+// for them: a job is either really queued or it is not.
+
+/** Body of POST /api/ingestion/jobs. The backend rejects unknown fields. */
+export interface IngestionJobCreate {
+  /** FIRMS product id, e.g. VIIRS_SNPP_NRT. */
+  source: string
+  west: number
+  south: number
+  east: number
+  north: number
+  /** YYYY-MM-DD, inclusive. */
+  start_date: string
+  end_date: string
+}
+
+export interface IngestionJobAccepted {
+  task_id: string
+  status: 'PENDING'
+}
+
+/**
+ * GET /api/ingestion/jobs/{task_id}. `status` is the Celery task state:
+ * PENDING, STARTED, RETRY, SUCCESS, FAILURE or REVOKED. An id the backend does
+ * not know (or forgot) is also reported as PENDING.
+ */
+export interface IngestionJobStatus {
+  task_id: string
+  status: string
+  result: Record<string, string> | null
+  error: string | null
+}
+
+export interface Health {
+  status: string
 }
