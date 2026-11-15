@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 config = context.config
 
 def get_database_url() -> str:
-    return get_database_settings().DATABASE_URL
+    return get_database_settings().DATABASE_URL.get_secret_value()
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

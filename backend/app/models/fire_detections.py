@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Double, DateTime, ForeignKey, Identity, Integer, SmallInteger, String, CheckConstraint
+from sqlalchemy import BigInteger, Double, DateTime, ForeignKey, Identity, Integer, SmallInteger, String, CheckConstraint, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
@@ -40,7 +40,7 @@ class FireDetection(Base):
     satellite: Mapped[str] = mapped_column(String(32), nullable=False)
     instrument: Mapped[str] = mapped_column(String(16), nullable=False)
     confidence_raw: Mapped[str] = mapped_column(String(16), nullable=False)
-    detection_type: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    detection_type: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     brightness: Mapped[float | None] = mapped_column(Double, nullable=True)
     bright_t31: Mapped[float | None] = mapped_column(Double, nullable=True)
     bright_ti4: Mapped[float | None] = mapped_column(Double, nullable=True)
@@ -63,4 +63,4 @@ class FireDetection(Base):
     version: Mapped[str] = mapped_column(String(32), nullable=False)
     ingestion_batch_id: Mapped[int] = mapped_column(Integer, ForeignKey("ingestion_batches.id", ondelete="RESTRICT"), nullable=False)
     record_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

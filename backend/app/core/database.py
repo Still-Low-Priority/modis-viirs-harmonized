@@ -7,7 +7,7 @@ from app.core.settings import get_database_settings
 
 @lru_cache()
 def get_engine() -> AsyncEngine:
-    return create_async_engine(get_database_settings().DATABASE_URL)
+    return create_async_engine(get_database_settings().DATABASE_URL.get_secret_value())
 
 @lru_cache()
 def get_session_factory() -> async_sessionmaker:

@@ -10,15 +10,19 @@ x-backend-dev: &backend-dev
   env_file:
     - path: backend/.env
       required: false
-  # Real env vars take precedence over backend/.env in pydantic-settings.
+  # Real env vars take precedence over backend/.env in pydantic-settings, so
+  # these always win. FIRMS_MAP_KEY is the only key that has to come from
+  # backend/.env; it is needed when an ingestion job runs, not at startup.
   environment:
     DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/firms
-    REDIS_URL: redis://redis:6379/0
-  depends_on:
-    db:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+x-depends-infra: &depends-infra
+  db:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
 
 services:
   db:
@@ -51,15 +55,39 @@ services:
 
   backend:
     <<: *backend-dev
+    # Dockerfile.dev only starts uvicorn; apply migrations first, like prod.
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    depends_on: *depends-infra
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     ports:
       - "127.0.0.1:8000:8000"
 
-  # Behind a profile because celery and app/worker.py don't exist yet
-  # (it would crash-loop). Enable with `--profile celery`.
+  # FIRMS ingestion worker. Waits for backend: only backend applies migrations.
   celery:
     <<: *backend-dev
-    command: celery -A app.worker worker --loglevel=info
-    profiles: ["celery"]
+    command: celery -A app.celery_app:celery_app worker --loglevel=info
+    depends_on: &depends-backend
+      <<: *depends-infra
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app:celery_app inspect ping -d celery@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  # Periodic task scheduler, one instance only. The schedule file goes to /tmp
+  # so it does not land in the bind-mounted ./backend.
+  celery-beat:
+    <<: *backend-dev
+    command: celery -A app.celery_app:celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+    depends_on: *depends-backend
 
   frontend:
     build:
