@@ -21,7 +21,7 @@ router = APIRouter(
 )
 async def read_hotspots(
     filters: DetectionFilters = Depends(get_detection_filters),
-    radius_km: float = Query(default=10.0, gt=0),
+    radius_km: float = Query(default=10.0, gt=0, allow_inf_nan=False),
     min_count: int = Query(default=10, ge=1),
     limit: int = Query(default=50, ge=0),
     session: AsyncSession = Depends(get_db),
