@@ -1,22 +1,57 @@
+import logging
 import math
 from datetime import date, datetime
 from typing import Any
-import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.integrations.firms.availability import (
+    FIRMSDateRange,
+    parse_data_availability,
+)
 from app.integrations.firms.client import FIRMSClient
 from app.integrations.firms.enums import FIRMSProduct
-from app.integrations.firms.parser import parse_firms_csv
-from app.integrations.firms.availability import FIRMSDateRange, parse_data_availability
 from app.integrations.firms.normalizer import normalize_firms_record
-from app.integrations.firms.validator import validate_firms_records
-from app.models.ingestion_batches import IngestionBatch
-from app.repositories.ingestion_batches import create_ingestion_batch, mark_batch_running, complete_ingestion_batch, fail_ingestion_batch, acquire_ingestion_scope_lock
-from app.repositories.fire_detections import insert_fire_detections
+from app.integrations.firms.parser import parse_firms_csv
 from app.integrations.firms.persistence import prepare_detection_records
 from app.integrations.firms.planner import plan_ingestion
+from app.integrations.firms.validator import validate_firms_records
+from app.models.ingestion_batches import IngestionBatch
+from app.repositories.fire_detections import insert_fire_detections
+from app.repositories.ingestion_batches import (
+    acquire_ingestion_scope_lock,
+    complete_ingestion_batch,
+    create_ingestion_batch,
+    fail_ingestion_batch,
+    mark_batch_running,
+)
 
 logger = logging.getLogger(__name__)
+
+REQUIRED_AREA_CSV_HEADERS = frozenset(
+    {
+        "latitude",
+        "longitude",
+        "acq_date",
+        "acq_time",
+    }
+)
+
+
+def ensure_area_csv_headers(csv_text: str) -> None:
+    cleaned = csv_text.lstrip("\ufeff \t\r\n")
+    header_line = cleaned.splitlines()[0] if cleaned else ""
+
+    headers = {
+        header.strip().lstrip("\ufeff")
+        for header in header_line.split(",")
+    }
+
+    if not REQUIRED_AREA_CSV_HEADERS.issubset(headers):
+        raise ValueError(
+            f"Unexpected FIRMS area response: {header_line[:200]!r}"
+        )
+
 
 def build_bbox_parts(
     *,
@@ -32,6 +67,7 @@ def build_bbox_parts(
         for value in coordinates
     ):
         raise TypeError("Bbox coordinates must be numeric.")
+
     if not all(math.isfinite(value) for value in coordinates):
         raise ValueError("Bbox coordinates must be finite.")
 
@@ -61,6 +97,7 @@ def build_bbox_parts(
 
     return parts
 
+
 async def fetch_period_records(
     client: FIRMSClient,
     source: FIRMSProduct,
@@ -69,7 +106,7 @@ async def fetch_period_records(
     end_date: date,
 ) -> list[dict[str, str | None]]:
     day_range = (end_date - start_date).days + 1
-    records = []
+    records: list[dict[str, str | None]] = []
 
     for west, south, east, north in bbox_parts:
         csv_text = await client.get_area_csv(
@@ -82,15 +119,18 @@ async def fetch_period_records(
             start_date=start_date,
         )
 
+        # A plain-text FIRMS error must never be treated as an empty CSV.
+        ensure_area_csv_headers(csv_text)
         records.extend(parse_firms_csv(csv_text))
 
     return records
+
 
 def normalize_and_validate_records(
     records: list[dict[str, str | None]],
     source: FIRMSProduct,
 ) -> tuple[list[dict[str, Any]], int]:
-    normalized_records = []
+    normalized_records: list[dict[str, Any]] = []
     normalization_rejected = 0
 
     for record in records:
@@ -105,9 +145,12 @@ def normalize_and_validate_records(
         normalized_records
     )
 
-    rejected_count = normalization_rejected + len(validation_rejected)
+    rejected_count = (
+        normalization_rejected + len(validation_rejected)
+    )
 
     return valid_records, rejected_count
+
 
 async def run_ingestion(
     session: AsyncSession,
@@ -121,7 +164,9 @@ async def run_ingestion(
     start_date: date,
     end_date: date,
     area_id: int | None = None,
-) -> None:
+) -> dict[str, int]:
+    """Plan, reserve and process ingestion batches for one area/product."""
+
     if (
         isinstance(start_date, datetime)
         or not isinstance(start_date, date)
@@ -156,7 +201,11 @@ async def run_ingestion(
     effective_end = min(end_date, source_range.max_date)
 
     if effective_start > effective_end:
-        return
+        raise ValueError(
+            f"Requested period {start_date}..{end_date} does not overlap "
+            f"FIRMS availability for {source.value} "
+            f"({source_range.min_date}..{source_range.max_date})."
+        )
 
     requested_availability = {
         source: FIRMSDateRange(
@@ -166,8 +215,7 @@ async def run_ingestion(
     }
 
     # 2. Acquire a PostgreSQL transaction-level advisory lock.
-    # Only one worker can plan the same Area + Product + Bbox
-    # at a time.
+    # Only one worker can plan the same Area + Product + Bbox at a time.
     await acquire_ingestion_scope_lock(
         session,
         source,
@@ -192,12 +240,16 @@ async def run_ingestion(
     )
 
     if not planned_ranges:
-        # Release the advisory lock.
+        # No work is necessary. Rollback releases the transaction lock.
         await session.rollback()
-        return
+
+        return {
+            "batches_total": 0,
+            "batches_failed": 0,
+        }
 
     # 4. Reserve every planned period before releasing the lock.
-    batch_ids = []
+    batch_ids: list[int] = []
 
     for date_from, date_to in planned_ranges:
         batch = await create_ingestion_batch(
@@ -214,9 +266,10 @@ async def run_ingestion(
 
         batch_ids.append(batch.id)
 
-    # One transaction commits all PENDING batches and releases
-    # the advisory lock.
+    # One transaction commits all PENDING batches and releases the lock.
     await session.commit()
+
+    batches_failed = 0
 
     # 5. Process each reserved batch independently.
     for batch_id in batch_ids:
@@ -260,14 +313,9 @@ async def run_ingestion(
                 prepared_records,
             )
 
-            records_skipped = (
-                len(valid_records) - records_inserted
-            )
+            records_skipped = len(valid_records) - records_inserted
 
-            batch = await session.get(
-                IngestionBatch,
-                batch_id,
-            )
+            batch = await session.get(IngestionBatch, batch_id)
 
             if batch is None:
                 raise RuntimeError(
@@ -287,6 +335,8 @@ async def run_ingestion(
             await session.commit()
 
         except Exception as exc:
+            batches_failed += 1
+
             # Roll back detections and unfinished batch updates.
             await session.rollback()
 
@@ -322,3 +372,8 @@ async def run_ingestion(
                     "Could not mark ingestion batch %s as FAILED.",
                     batch_id,
                 )
+
+    return {
+        "batches_total": len(batch_ids),
+        "batches_failed": batches_failed,
+    }

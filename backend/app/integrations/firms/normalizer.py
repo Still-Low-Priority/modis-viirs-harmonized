@@ -22,6 +22,15 @@ def parse_optional_float(value: str | None) -> float | None:
 
     return float(value)
 
+def parse_optional_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+
+    return int(value)
+
 def require_csv_value(
     record: dict[str, str | None],
     field: str,
@@ -47,16 +56,20 @@ def normalize_firms_record(
         "satellite": require_csv_value(record, "satellite"),
         "instrument": require_csv_value(record, "instrument"),
         "confidence_raw": require_csv_value(record, "confidence"),
-        "detection_type": None,
+        # FIRMS sends the "type" column only for Standard Processing
+        # products; NRT rows have no detection type.
+        "detection_type": parse_optional_int(record.get("type")),
 
         "brightness": parse_optional_float(record.get("brightness")),
         "bright_t31": parse_optional_float(record.get("bright_t31")),
         "bright_ti4": parse_optional_float(record.get("bright_ti4")),
         "bright_ti5": parse_optional_float(record.get("bright_ti5")),
 
-        "scan": parse_optional_float(record.get("scan")),
-        "track": parse_optional_float(record.get("track")),
-        "frp": parse_optional_float(record.get("frp")),
+        # NOT NULL in fire_detections: a row without them is rejected
+        # here instead of failing the whole batch on insert.
+        "scan": float(require_csv_value(record, "scan")),
+        "track": float(require_csv_value(record, "track")),
+        "frp": float(require_csv_value(record, "frp")),
 
         "daynight": (
             DayNight(record["daynight"])
