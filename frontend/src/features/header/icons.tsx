@@ -25,6 +25,12 @@ export const ListIcon = () => (
     <path d="M4 6h.01M4 12h.01M4 18h.01" />
   </Svg>
 )
+export const DownloadIcon = () => (
+  <Svg>
+    <path d="M12 4v11M7 11l5 5 5-5" />
+    <path d="M5 20h14" />
+  </Svg>
+)
 export const FiltersIcon = () => (
   <Svg>
     <path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0" />

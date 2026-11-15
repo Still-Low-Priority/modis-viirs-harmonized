@@ -175,3 +175,41 @@ export interface Api {
   /** Optional endpoint (P1): resolves to null when the backend has no /hotspots yet. */
   getHotspots(q: HotspotsQuery, signal?: AbortSignal): Promise<HotspotCollection | null>
 }
+
+// --- Ingestion (POST/GET /api/ingestion/jobs). These endpoints exist in the
+// backend today; they are not part of `Api` because demo mode has no stand-in
+// for them: a job is either really queued or it is not.
+
+/** Body of POST /api/ingestion/jobs. The backend rejects unknown fields. */
+export interface IngestionJobCreate {
+  /** FIRMS product id, e.g. VIIRS_SNPP_NRT. */
+  source: string
+  west: number
+  south: number
+  east: number
+  north: number
+  /** YYYY-MM-DD, inclusive. */
+  start_date: string
+  end_date: string
+}
+
+export interface IngestionJobAccepted {
+  task_id: string
+  status: 'PENDING'
+}
+
+/**
+ * GET /api/ingestion/jobs/{task_id}. `status` is the Celery task state:
+ * PENDING, STARTED, RETRY, SUCCESS, FAILURE or REVOKED. An id the backend does
+ * not know (or forgot) is also reported as PENDING.
+ */
+export interface IngestionJobStatus {
+  task_id: string
+  status: string
+  result: Record<string, string> | null
+  error: string | null
+}
+
+export interface Health {
+  status: string
+}

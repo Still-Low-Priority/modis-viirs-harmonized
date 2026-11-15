@@ -171,12 +171,18 @@ describe('httpApi', () => {
       fetchMock.mockResolvedValue(jsonResponse({ detail: 'Detection not found' }, { status: 404 }))
       await expect(httpApi.getDetection(1)).rejects.toMatchObject({ status: 404, message: 'Detection not found', name: 'ApiError' })
     })
-    it('JSON-stringifies an array detail (422 validation errors)', async () => {
+    it('uses the first message of an array detail (422 validation errors)', async () => {
       const detail = [{ loc: ['query', 'date_from'], msg: 'field required', type: 'value_error.missing' }]
       fetchMock.mockResolvedValue(jsonResponse({ detail }, { status: 422 }))
       const err = (await httpApi.getMeta().catch((e: unknown) => e)) as ApiError
       expect(err).toBeInstanceOf(ApiError)
       expect(err.status).toBe(422)
+      expect(err.message).toBe('field required')
+    })
+    it('JSON-stringifies a detail it cannot summarise', async () => {
+      const detail = { code: 'E42', where: ['a', 'b'] }
+      fetchMock.mockResolvedValue(jsonResponse({ detail }, { status: 400 }))
+      const err = (await httpApi.getMeta().catch((e: unknown) => e)) as ApiError
       expect(JSON.parse(err.message)).toEqual(detail)
     })
     it('falls back to statusText when the body is not JSON', async () => {

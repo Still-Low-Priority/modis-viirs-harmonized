@@ -4,7 +4,8 @@ export const messages = {
     titleShort: 'MODIS × VIIRS',
     tagline: 'NASA FIRMS fire hotspots',
     demo: 'Demo data',
-    demoHint: 'The backend has no /api/meta yet. The fires on the map are generated, not real.',
+    demoHint:
+      'The backend cannot serve detections yet (no /api/meta). The fires on the map are generated, not real. Loading FIRMS data into the backend already works: open the Data tab.',
     live: 'Live data',
     liveHint: 'Data comes from the backend API.',
     updated: 'Updated {when}',
@@ -12,6 +13,7 @@ export const messages = {
     viewAria: 'View menu',
     hotspotsPanel: 'Hotspots panel',
     filtersPanel: 'Filters panel',
+    ingestPanel: 'Load data panel',
     chartsPanel: 'Charts and calendar',
     rings: 'Hotspot rings on map',
     about: 'About the data',
