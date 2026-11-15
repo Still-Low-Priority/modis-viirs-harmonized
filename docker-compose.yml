@@ -4,6 +4,19 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-celery-common: &celery-common
+  image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
+  env_file: .env
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    backend:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: *default-logging
+
 services:
   db:
     image: postgres:17-alpine
@@ -31,37 +44,50 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  # Required keys in .env (see app/core/settings.py): DATABASE_URL, FIRMS_MAP_KEY,
+  # CELERY_BROKER_URL, CELERY_RESULT_BACKEND, plus POSTGRES_* for the db service.
+  # Inside compose the hosts are `db` and `redis`, never localhost.
   backend:
     image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
     build: ./backend
     env_file: .env
-    environment:
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Healthy = migrations applied (they run before uvicorn) and the API answers.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # Reachable only inside the compose network (via the frontend's nginx).
     expose:
       - "8000"
     restart: unless-stopped
     logging: *default-logging
 
-  # FIRMS ingestion worker. Same image as backend; migrations run only there.
+  # FIRMS ingestion worker. Same image as backend; it waits for backend to be
+  # healthy because only backend applies the Alembic migrations.
   celery:
-    image: ${IMAGE_PREFIX:-modis-viirs}-backend:${IMAGE_TAG:-main}
-    command: celery -A app.celery_app worker --loglevel=info
-    env_file: .env
-    environment:
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    logging: *default-logging
+    <<: *celery-common
+    command: celery -A app.celery_app:celery_app worker --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app:celery_app inspect ping -d celery@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  # Periodic task scheduler. Must run as exactly one instance, otherwise every
+  # scheduled task is sent twice. The schedule itself lives in app/celery_app.py
+  # (beat_schedule); the schedule file goes to /tmp because /app is read-only
+  # for appuser.
+  celery-beat:
+    <<: *celery-common
+    command: celery -A app.celery_app:celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
 
   # The frontend image is nginx: it serves the SPA and proxies /api to backend,
   # so it is the only public entrypoint (no separate nginx service).
